@@ -72,13 +72,20 @@ func main() {
 		RunE:  finalizeReport,
 	}
 
+	var parseCmd = &cobra.Command{
+		Use:   "parse <report-file>",
+		Short: "Parse and display test report with GitHub Actions formatting",
+		Args:  cobra.ExactArgs(1),
+		RunE:  parseReport,
+	}
+
 	stepCmd.Flags().StringVarP(&reportFile, "file", "f", "", "Report file path (required)")
 	stepCmd.MarkFlagRequired("file")
 
 	finalizeCmd.Flags().StringVarP(&reportFile, "file", "f", "", "Report file path (required)")
 	finalizeCmd.MarkFlagRequired("file")
 
-	rootCmd.AddCommand(initCmd, stepCmd, finalizeCmd)
+	rootCmd.AddCommand(initCmd, stepCmd, finalizeCmd, parseCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -240,6 +247,90 @@ func getEnvOrDefault(key, defaultValue string) string {
 }
 
 // Debug function to print report as JSON for troubleshooting
+func parseReport(cmd *cobra.Command, args []string) error {
+	reportPath := args[0]
+
+	report, err := readReport(reportPath)
+	if err != nil {
+		return fmt.Errorf("failed to read report: %w", err)
+	}
+
+	// Get GitHub Actions step summary path from environment
+	summaryPath := os.Getenv("GITHUB_STEP_SUMMARY")
+	if summaryPath == "" {
+		// If not running in GitHub Actions, output to stdout
+		return outputReportToConsole(*report)
+	}
+
+	return appendReportToGitHubSummary(*report, summaryPath)
+}
+
+func outputReportToConsole(report TestReport) error {
+	fmt.Println("### 📊 Test Metrics")
+
+	if report.Summary != nil {
+		s := report.Summary
+		fmt.Printf("- **Overall Status**: %s\n", s.OverallStatus)
+		fmt.Printf("- **Success Rate**: %s\n", s.SuccessRate)
+		fmt.Printf("- **Duration**: %ds\n", s.Duration)
+
+		fmt.Println("\n#### 📋 Detailed Steps")
+		for _, step := range report.Steps {
+			fmt.Printf("- **%s**: %s _(%s)_\n", step.Phase, step.Status, step.Timestamp.Format(time.RFC3339))
+		}
+	} else {
+		fmt.Println("⚠️ No summary data available")
+	}
+
+	return nil
+}
+
+func appendReportToGitHubSummary(report TestReport, summaryPath string) error {
+	file, err := os.OpenFile(summaryPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open GitHub summary file: %w", err)
+	}
+	defer file.Close()
+
+	// Write test metrics section
+	if _, err := file.WriteString("### 📊 Test Metrics\n"); err != nil {
+		return fmt.Errorf("failed to write to summary: %w", err)
+	}
+
+	if report.Summary != nil {
+		s := report.Summary
+		if _, err := fmt.Fprintf(file, "- **Overall Status**: %s\n", s.OverallStatus); err != nil {
+			return fmt.Errorf("failed to write overall status: %w", err)
+		}
+		if _, err := fmt.Fprintf(file, "- **Success Rate**: %s\n", s.SuccessRate); err != nil {
+			return fmt.Errorf("failed to write success rate: %w", err)
+		}
+		if _, err := fmt.Fprintf(file, "- **Duration**: %ds\n", s.Duration); err != nil {
+			return fmt.Errorf("failed to write duration: %w", err)
+		}
+
+		// Write detailed steps
+		if _, err := file.WriteString("\n#### 📋 Detailed Steps\n"); err != nil {
+			return fmt.Errorf("failed to write steps header: %w", err)
+		}
+
+		for _, step := range report.Steps {
+			if _, err := fmt.Fprintf(file, "- **%s**: %s _(%s)_\n",
+				step.Phase,
+				step.Status,
+				step.Timestamp.Format(time.RFC3339)); err != nil {
+				return fmt.Errorf("failed to write step: %w", err)
+			}
+		}
+	} else {
+		if _, err := file.WriteString("⚠️ No summary data available\n"); err != nil {
+			return fmt.Errorf("failed to write no summary message: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func debugPrint(report TestReport) {
 	data, _ := json.MarshalIndent(report, "", "  ")
 	fmt.Fprintf(os.Stderr, "DEBUG: %s\n", data)
