@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -43,6 +44,21 @@ type TestReport struct {
 	} `yaml:"summary,omitempty"`
 }
 
+// GitHubPayload represents the GitHub Actions client payload structure
+type GitHubPayload struct {
+	Success      bool                       `json:"success"`
+	Source       string                     `json:"source"`
+	Branch       string                     `json:"branch"`
+	Commit       string                     `json:"commit"`
+	ArtifactName string                     `json:"artifact_name"`
+	Artifacts    map[string]ArtifactContent `json:"artifacts"`
+}
+
+// ArtifactContent represents base64 encoded artifact content
+type ArtifactContent struct {
+	Content string `json:"content"`
+}
+
 var reportFile string
 
 func main() {
@@ -79,13 +95,27 @@ func main() {
 		RunE:  parseReport,
 	}
 
+	var extractCmd = &cobra.Command{
+		Use:   "extract <payload-json> <output-dir>",
+		Short: "Extract and decode artifacts from GitHub Actions payload",
+		Args:  cobra.ExactArgs(2),
+		RunE:  extractArtifacts,
+	}
+
+	var summaryCmd = &cobra.Command{
+		Use:   "summary <payload-json>",
+		Short: "Generate execution summary from GitHub Actions payload",
+		Args:  cobra.ExactArgs(1),
+		RunE:  generateSummary,
+	}
+
 	stepCmd.Flags().StringVarP(&reportFile, "file", "f", "", "Report file path (required)")
 	stepCmd.MarkFlagRequired("file")
 
 	finalizeCmd.Flags().StringVarP(&reportFile, "file", "f", "", "Report file path (required)")
 	finalizeCmd.MarkFlagRequired("file")
 
-	rootCmd.AddCommand(initCmd, stepCmd, finalizeCmd, parseCmd)
+	rootCmd.AddCommand(initCmd, stepCmd, finalizeCmd, parseCmd, extractCmd, summaryCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -334,4 +364,109 @@ func appendReportToGitHubSummary(report TestReport, summaryPath string) error {
 func debugPrint(report TestReport) {
 	data, _ := json.MarshalIndent(report, "", "  ")
 	fmt.Fprintf(os.Stderr, "DEBUG: %s\n", data)
+}
+
+// extractArtifacts extracts and decodes artifacts from GitHub Actions payload
+func extractArtifacts(cmd *cobra.Command, args []string) error {
+	payloadPath := args[0]
+	outputDir := args[1]
+
+	// Read and parse payload
+	data, err := os.ReadFile(payloadPath)
+	if err != nil {
+		return fmt.Errorf("failed to read payload file: %w", err)
+	}
+
+	var payload GitHubPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return fmt.Errorf("failed to parse payload JSON: %w", err)
+	}
+
+	// Create output directory
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	fmt.Println("📦 Extracting artifacts...")
+
+	// Extract and decode artifacts
+	for filename, artifact := range payload.Artifacts {
+		if artifact.Content == "" || artifact.Content == "null" {
+			fmt.Printf("⚠️  Skipping empty artifact: %s\n", filename)
+			continue
+		}
+
+		// Decode base64 content
+		content, err := base64.StdEncoding.DecodeString(artifact.Content)
+		if err != nil {
+			return fmt.Errorf("failed to decode artifact %s: %w", filename, err)
+		}
+
+		// Write to file
+		outputPath := filepath.Join(outputDir, filename)
+		if err := os.WriteFile(outputPath, content, 0644); err != nil {
+			return fmt.Errorf("failed to write artifact %s: %w", filename, err)
+		}
+
+		fmt.Printf("✅ Decoded: %s\n", filename)
+	}
+
+	return nil
+}
+
+// generateSummary generates execution summary from GitHub Actions payload
+func generateSummary(cmd *cobra.Command, args []string) error {
+	payloadPath := args[0]
+
+	// Read and parse payload
+	data, err := os.ReadFile(payloadPath)
+	if err != nil {
+		return fmt.Errorf("failed to read payload file: %w", err)
+	}
+
+	var payload GitHubPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return fmt.Errorf("failed to parse payload JSON: %w", err)
+	}
+
+	// Determine status and emoji
+	var emoji, status string
+	if payload.Success {
+		emoji = "✅"
+		status = "SUCCESS"
+	} else {
+		emoji = "❌"
+		status = "FAILURE"
+	}
+
+	// Generate summary content
+	summaryContent := fmt.Sprintf(`## %s External Test Results: %s
+
+### 📍 Execution Details
+| Property | Value |
+| :--- | :--- |
+| **Source** | %s |
+| **Branch** | `+"`%s`"+` |
+| **Commit** | `+"`%s`"+` |
+| **Artifact Name** | %s |
+`, emoji, status, payload.Source, payload.Branch, payload.Commit, payload.ArtifactName)
+
+	// Write to GitHub Actions step summary if available
+	summaryPath := os.Getenv("GITHUB_STEP_SUMMARY")
+	if summaryPath != "" {
+		file, err := os.OpenFile(summaryPath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open GitHub summary file: %w", err)
+		}
+		defer file.Close()
+
+		if _, err := file.WriteString(summaryContent); err != nil {
+			return fmt.Errorf("failed to write to GitHub summary: %w", err)
+		}
+	} else {
+		// If not in GitHub Actions, output to stdout
+		fmt.Print(summaryContent)
+	}
+
+	return nil
 }
