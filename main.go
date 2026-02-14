@@ -303,13 +303,44 @@ func outputReportToConsole(report TestReport) error {
 		fmt.Printf("- **Overall Status**: %s\n", s.OverallStatus)
 		fmt.Printf("- **Success Rate**: %s\n", s.SuccessRate)
 		fmt.Printf("- **Duration**: %ds\n", s.Duration)
+	} else {
+		// Calculate overall status from steps when summary is missing
+		passedSteps := 0
+		failedSteps := 0
+		totalSteps := len(report.Steps)
 
+		for _, step := range report.Steps {
+			switch step.Status {
+			case "passed":
+				passedSteps++
+			case "failed":
+				failedSteps++
+			}
+		}
+
+		overallStatus := "passed"
+		if failedSteps > 0 {
+			overallStatus = "failed"
+		}
+
+		var successRate string
+		if totalSteps > 0 {
+			successRate = fmt.Sprintf("%.0f%%", float64(passedSteps)/float64(totalSteps)*100)
+		} else {
+			successRate = "0%"
+		}
+
+		fmt.Printf("- **Overall Status**: %s\n", overallStatus)
+		fmt.Printf("- **Success Rate**: %s\n", successRate)
+		fmt.Println("- **Duration**: N/A")
+	}
+
+	// Always show detailed steps if they exist
+	if len(report.Steps) > 0 {
 		fmt.Println("\n#### 📋 Detailed Steps")
 		for _, step := range report.Steps {
 			fmt.Printf("- **%s**: %s _(%s)_\n", step.Phase, step.Status, step.Timestamp.Format(time.RFC3339))
 		}
-	} else {
-		fmt.Println("⚠️ No summary data available")
 	}
 
 	return nil
