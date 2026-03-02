@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -59,13 +60,19 @@ type ArtifactContent struct {
 	Content string `json:"content"`
 }
 
-var reportFile string
+var (
+	reportFile string
+	verbosity  int
+)
 
 func main() {
 	var rootCmd = &cobra.Command{
 		Use:   "home-ci-reporter",
 		Short: "E2E test report generator",
 		Long:  "Generates YAML test reports for e2e tests with atomic operations ensuring valid YAML at all times",
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			setupLogging(verbosity)
+		},
 	}
 
 	var initCmd = &cobra.Command{
@@ -115,12 +122,39 @@ func main() {
 	finalizeCmd.Flags().StringVarP(&reportFile, "file", "f", "", "Report file path (required)")
 	finalizeCmd.MarkFlagRequired("file")
 
+	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "Increase verbosity (use -v, -vv, -vvv for different levels)")
+
 	rootCmd.AddCommand(initCmd, stepCmd, finalizeCmd, parseCmd, extractCmd, summaryCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// setupLogging configures slog based on verbosity level
+func setupLogging(verbosity int) {
+	var level slog.Level
+
+	switch verbosity {
+	case 0:
+		level = slog.LevelWarn  // Default: only warnings and errors
+	case 1:
+		level = slog.LevelInfo  // -v: info, warnings, and errors
+	case 2:
+		level = slog.LevelDebug // -vv: debug and above
+	default:
+		level = slog.LevelDebug // -vvv+: debug and above (same as -vv)
+	}
+
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: level,
+	})
+
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
+	slog.Debug("Logging initialized", "verbosity_level", verbosity, "slog_level", level)
 }
 
 func initReport(cmd *cobra.Command, args []string) error {
@@ -130,8 +164,11 @@ func initReport(cmd *cobra.Command, args []string) error {
 		projectName = args[1]
 	}
 
+	slog.Info("Initializing report", "report_path", reportPath, "project_name", projectName)
+
 	// Create directory if needed
 	if err := os.MkdirAll(filepath.Dir(reportPath), 0755); err != nil {
+		slog.Error("Failed to create directory", "error", err, "path", filepath.Dir(reportPath))
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
@@ -152,6 +189,8 @@ func initReport(cmd *cobra.Command, args []string) error {
 	report.Environment.Arch = getEnvOrDefault("GOARCH", "unknown")
 	report.Environment.Shell = os.Args[0]
 
+	slog.Debug("Report environment", "os", report.Environment.OS, "arch", report.Environment.Arch, "shell", report.Environment.Shell, "hostname", hostname)
+
 	return writeReport(reportPath, report)
 }
 
@@ -160,8 +199,11 @@ func addStep(cmd *cobra.Command, args []string) error {
 	status := args[1]
 	message := args[2]
 
+	slog.Info("Adding step", "phase", phase, "status", status, "message", message, "report_file", reportFile)
+
 	report, err := readReport(reportFile)
 	if err != nil {
+		slog.Error("Failed to read report", "error", err, "file", reportFile)
 		return err
 	}
 
@@ -280,18 +322,27 @@ func getEnvOrDefault(key, defaultValue string) string {
 func parseReport(cmd *cobra.Command, args []string) error {
 	reportPath := args[0]
 
+	slog.Info("Starting report parsing", "report_path", reportPath)
+
 	report, err := readReport(reportPath)
 	if err != nil {
+		slog.Error("Failed to read report", "error", err, "path", reportPath)
 		return fmt.Errorf("failed to read report: %w", err)
 	}
 
+	slog.Debug("Report loaded successfully", "steps_count", len(report.Steps), "has_summary", report.Summary != nil)
+
 	// Get GitHub Actions step summary path from environment
 	summaryPath := os.Getenv("GITHUB_STEP_SUMMARY")
+	slog.Debug("Environment check", "GITHUB_STEP_SUMMARY", summaryPath, "GITHUB_ACTIONS", os.Getenv("GITHUB_ACTIONS"))
+
 	if summaryPath == "" {
 		// If not running in GitHub Actions, output to stdout
+		slog.Info("Running in local mode - outputting to console")
 		return outputReportToConsole(*report)
 	}
 
+	slog.Info("Running in GitHub Actions mode", "summary_file", summaryPath)
 	return appendReportToGitHubSummary(*report, summaryPath)
 }
 
@@ -347,19 +398,25 @@ func outputReportToConsole(report TestReport) error {
 }
 
 func appendReportToGitHubSummary(report TestReport, summaryPath string) error {
+	slog.Debug("Opening GitHub summary file", "path", summaryPath)
+
 	file, err := os.OpenFile(summaryPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
+		slog.Error("Failed to open GitHub summary file", "error", err, "path", summaryPath)
 		return fmt.Errorf("failed to open GitHub summary file: %w", err)
 	}
 	defer file.Close()
 
 	// Write test metrics section
+	slog.Debug("Writing test metrics section to summary file")
 	if _, err := file.WriteString("### 📊 Test Metrics\n"); err != nil {
+		slog.Error("Failed to write metrics header", "error", err)
 		return fmt.Errorf("failed to write to summary: %w", err)
 	}
 
 	if report.Summary != nil {
 		s := report.Summary
+		slog.Debug("Writing summary data", "overall_status", s.OverallStatus, "success_rate", s.SuccessRate, "duration", s.Duration)
 		if _, err := fmt.Fprintf(file, "- **Overall Status**: %s\n", s.OverallStatus); err != nil {
 			return fmt.Errorf("failed to write overall status: %w", err)
 		}
@@ -383,12 +440,16 @@ func appendReportToGitHubSummary(report TestReport, summaryPath string) error {
 				return fmt.Errorf("failed to write step: %w", err)
 			}
 		}
+
+		slog.Debug("Successfully wrote summary to file", "steps_written", len(report.Steps))
 	} else {
+		slog.Warn("No summary data available in report")
 		if _, err := file.WriteString("⚠️ No summary data available\n"); err != nil {
 			return fmt.Errorf("failed to write no summary message: %w", err)
 		}
 	}
 
+	slog.Info("Successfully appended report to GitHub summary")
 	return nil
 }
 
