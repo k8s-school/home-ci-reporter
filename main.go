@@ -1,9 +1,13 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -57,7 +61,20 @@ type GitHubPayload struct {
 
 // ArtifactContent represents base64 encoded artifact content
 type ArtifactContent struct {
-	Content string `json:"content"`
+	Content     string                `json:"content"`
+	Type        string                `json:"type,omitempty"`
+	Compressed  bool                  `json:"compressed,omitempty"`
+	Truncated   bool                  `json:"truncated,omitempty"`
+	OriginalSize int                   `json:"original_size,omitempty"`
+	Files       []ArchiveFileMetadata `json:"files,omitempty"` // For archive type only
+}
+
+// ArchiveFileMetadata contains metadata about files in an archive
+type ArchiveFileMetadata struct {
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Truncated    bool   `json:"truncated"`
+	OriginalSize int    `json:"original_size"`
 }
 
 var (
@@ -494,13 +511,61 @@ func extractArtifacts(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to decode artifact %s: %w", filename, err)
 		}
 
-		// Write to file
-		outputPath := filepath.Join(outputDir, filename)
-		if err := os.WriteFile(outputPath, content, 0644); err != nil {
-			return fmt.Errorf("failed to write artifact %s: %w", filename, err)
+		// Check if this is a combined archive
+		if artifact.Type == "archive" && len(artifact.Files) > 0 {
+			fmt.Printf("📦 Extracting combined archive: %s\n", filename)
+			if err := extractCombinedArchive(content, outputDir, artifact.Files); err != nil {
+				return fmt.Errorf("failed to extract combined archive %s: %w", filename, err)
+			}
+			fmt.Printf("✅ Extracted combined archive: %s (%d files)\n", filename, len(artifact.Files))
+		} else {
+			// Regular file - write directly
+			outputPath := filepath.Join(outputDir, filename)
+			if err := os.WriteFile(outputPath, content, 0644); err != nil {
+				return fmt.Errorf("failed to write artifact %s: %w", filename, err)
+			}
+			fmt.Printf("✅ Decoded: %s\n", filename)
+		}
+	}
+
+	return nil
+}
+
+// extractCombinedArchive extracts files from a tar.gz combined archive
+func extractCombinedArchive(archiveData []byte, outputDir string, expectedFiles []ArchiveFileMetadata) error {
+	// Create gzip reader
+	gz, err := gzip.NewReader(bytes.NewReader(archiveData))
+	if err != nil {
+		return fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gz.Close()
+
+	// Create tar reader
+	tr := tar.NewReader(gz)
+
+	// Extract files
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break // End of archive
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar header: %w", err)
 		}
 
-		fmt.Printf("✅ Decoded: %s\n", filename)
+		// Read file content
+		var buf bytes.Buffer
+		if _, err := io.Copy(&buf, tr); err != nil {
+			return fmt.Errorf("failed to read file content for %s: %w", hdr.Name, err)
+		}
+
+		// Write to output directory
+		outputPath := filepath.Join(outputDir, hdr.Name)
+		if err := os.WriteFile(outputPath, buf.Bytes(), 0644); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", hdr.Name, err)
+		}
+
+		fmt.Printf("  ✅ Extracted: %s (%d bytes)\n", hdr.Name, len(buf.Bytes()))
 	}
 
 	return nil

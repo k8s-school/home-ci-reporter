@@ -1,0 +1,49 @@
+{
+  "success": false,
+  "source": "home-ci",
+  "branch": "feature/combined-archive-test",
+  "commit": "abc123def456789",
+  "artifact_name": "log-feature_combined-archive-test-abc123de",
+  "artifacts": {
+    "combined-archive.tar.gz": {
+      "content": "",
+      "type": "archive",
+      "compressed": true,
+      "truncated": false,
+      "original_size": 2450,
+      "files": [
+        {
+          "name": "test.log",
+          "type": "log",
+          "truncated": false,
+          "original_size": 1200
+        },
+        {
+          "name": "e2e-report.yaml",
+          "type": "e2e-report",
+          "truncated": false,
+          "original_size": 850
+        },
+        {
+          "name": "result.json",
+          "type": "result",
+          "truncated": false,
+          "original_size": 400
+        }
+      ]
+    },
+    "metadata": {
+      "content": "",
+      "type": "metadata",
+      "compressed": false,
+      "truncated": false,
+      "original_size": 0
+    }
+  },
+  "metadata": {
+    "branch": "feature/combined-archive-test",
+    "commit": "abc123def456789",
+    "success": false
+  },
+  "timestamp": "1771832716"
+}

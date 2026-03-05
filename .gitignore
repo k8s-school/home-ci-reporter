@@ -32,3 +32,10 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Test artifacts and temporary files
+/tests/uat/test-artifacts/
+/tests/uat/tmp/
+test-*payload*.json
+*.tar.gz
+/test-compression/
