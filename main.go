@@ -27,15 +27,10 @@ type TestStep struct {
 
 // TestReport represents the complete test report
 type TestReport struct {
-	TestRun struct {
-		StartTime   time.Time `yaml:"start_time"`
-		Runner      string    `yaml:"runner"`
-		ProjectName string    `yaml:"project_name,omitempty"`
-	} `yaml:"test_run"`
+	StartTime   time.Time `yaml:"start_time"`
+	ProjectName string    `yaml:"project_name,omitempty"`
 	Environment struct {
-		OS    string `yaml:"os"`
-		Arch  string `yaml:"arch"`
-		Shell string `yaml:"shell"`
+		Runner string `yaml:"runner"`
 	} `yaml:"environment"`
 	Steps   []TestStep `yaml:"steps"`
 	Summary *struct {
@@ -195,18 +190,15 @@ func initReport(cmd *cobra.Command, args []string) error {
 		Steps: make([]TestStep, 0),
 	}
 
-	report.TestRun.StartTime = time.Now().UTC()
-	report.TestRun.Runner = hostname
+	report.StartTime = time.Now().UTC()
 	if projectName != "" {
-		report.TestRun.ProjectName = projectName
+		report.ProjectName = projectName
 	}
 
 	// Get environment info
-	report.Environment.OS = getEnvOrDefault("GOOS", "unknown")
-	report.Environment.Arch = getEnvOrDefault("GOARCH", "unknown")
-	report.Environment.Shell = os.Args[0]
+	report.Environment.Runner = hostname
 
-	slog.Debug("Report environment", "os", report.Environment.OS, "arch", report.Environment.Arch, "shell", report.Environment.Shell, "hostname", hostname)
+	slog.Debug("Report environment", "hostname", hostname)
 
 	return writeReport(reportPath, report)
 }
@@ -243,7 +235,7 @@ func finalizeReport(cmd *cobra.Command, args []string) error {
 	}
 
 	endTime := time.Now().UTC()
-	duration := int(endTime.Sub(report.TestRun.StartTime).Seconds())
+	duration := int(endTime.Sub(report.StartTime).Seconds())
 
 	totalSteps := len(report.Steps)
 	passedSteps := 0

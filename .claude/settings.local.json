@@ -13,7 +13,8 @@
       "Bash(echo \"GITHUB_STEP_SUMMARY: $GITHUB_STEP_SUMMARY:-''(not set)''\")",
       "Read(//tmp/home-ci/ktbx/main_32892b7a/logs/**)",
       "Bash(./home-ci-reporter parse /tmp/home-ci/ktbx/main_32892b7a/logs/e2e-report.yaml)",
-      "Bash(GITHUB_STEP_SUMMARY=\"/tmp/test_summary.md\" ./home-ci-reporter -vvv parse /tmp/home-ci/ktbx/main_32892b7a/logs/e2e-report.yaml)"
+      "Bash(GITHUB_STEP_SUMMARY=\"/tmp/test_summary.md\" ./home-ci-reporter -vvv parse /tmp/home-ci/ktbx/main_32892b7a/logs/e2e-report.yaml)",
+      "Bash(cat /tmp/test_summary.md)"
     ],
     "deny": [],
     "ask": []
