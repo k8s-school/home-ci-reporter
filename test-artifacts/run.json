@@ -1,0 +1,15 @@
+{
+  "branch": "1131-home-ci-integration",
+  "commit": "548aa68320364e8b0144fa0d6cf6bf4194114616",
+  "log_file": "run.log",
+  "start_time": "2026-02-23T08:44:50.752328142+01:00",
+  "end_time": "2026-02-23T08:45:16.547317367+01:00",
+  "duration": 25794989226,
+  "success": false,
+  "timed_out": false,
+  "cleanup_executed": true,
+  "cleanup_success": true,
+  "github_actions_notified": false,
+  "github_actions_success": false,
+  "error_message": "exit status 1"
+}

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go:*)",
+      "Bash(./home-ci-reporter parse report.yaml)",
+      "Bash(./home-ci-reporter parse e2e-report.yaml)",
+      "Bash(./home-ci-reporter -v parse report.yaml)",
+      "Bash(./home-ci-reporter -vv parse report.yaml)",
+      "Bash(export GITHUB_STEP_SUMMARY=\"/tmp/github_summary.md\")",
+      "Bash(cat $GITHUB_STEP_SUMMARY)",
+      "Bash(./home-ci-reporter parse /tmp/home-ci/ktbx/main_d40a4c66/logs/e2e-report.yaml)",
+      "Bash(./home-ci-reporter -vv parse /tmp/home-ci/ktbx/main_d40a4c66/logs/e2e-report.yaml)",
+      "Bash(echo \"GITHUB_STEP_SUMMARY: $GITHUB_STEP_SUMMARY:-''(not set)''\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -414,6 +414,28 @@ func outputReportToConsole(report TestReport) error {
 	return nil
 }
 
+// writeStepsToFile writes the detailed steps section to a file
+func writeStepsToFile(file *os.File, steps []TestStep) error {
+	if len(steps) == 0 {
+		return nil
+	}
+
+	if _, err := file.WriteString("\n#### 📋 Detailed Steps\n"); err != nil {
+		return fmt.Errorf("failed to write steps header: %w", err)
+	}
+
+	for _, step := range steps {
+		if _, err := fmt.Fprintf(file, "- **%s**: %s _(%s)_\n",
+			step.Phase,
+			step.Status,
+			step.Timestamp.Format(time.RFC3339)); err != nil {
+			return fmt.Errorf("failed to write step: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func appendReportToGitHubSummary(report TestReport, summaryPath string) error {
 	slog.Debug("Opening GitHub summary file", "path", summaryPath)
 
@@ -445,24 +467,60 @@ func appendReportToGitHubSummary(report TestReport, summaryPath string) error {
 		}
 
 		// Write detailed steps
-		if _, err := file.WriteString("\n#### 📋 Detailed Steps\n"); err != nil {
-			return fmt.Errorf("failed to write steps header: %w", err)
-		}
-
-		for _, step := range report.Steps {
-			if _, err := fmt.Fprintf(file, "- **%s**: %s _(%s)_\n",
-				step.Phase,
-				step.Status,
-				step.Timestamp.Format(time.RFC3339)); err != nil {
-				return fmt.Errorf("failed to write step: %w", err)
-			}
+		if err := writeStepsToFile(file, report.Steps); err != nil {
+			return err
 		}
 
 		slog.Debug("Successfully wrote summary to file", "steps_written", len(report.Steps))
 	} else {
-		slog.Warn("No summary data available in report")
-		if _, err := file.WriteString("⚠️ No summary data available\n"); err != nil {
-			return fmt.Errorf("failed to write no summary message: %w", err)
+		// Calculate overall status from steps when summary is missing
+		passedSteps := 0
+		failedSteps := 0
+		totalSteps := len(report.Steps)
+
+		for _, step := range report.Steps {
+			switch step.Status {
+			case "passed":
+				passedSteps++
+			case "failed":
+				failedSteps++
+			}
+		}
+
+		overallStatus := "passed"
+		if failedSteps > 0 {
+			overallStatus = "failed"
+		}
+
+		var successRate string
+		if totalSteps > 0 {
+			successRate = fmt.Sprintf("%.0f%%", float64(passedSteps)/float64(totalSteps)*100)
+		} else {
+			successRate = "0%"
+		}
+
+		slog.Debug("Writing calculated summary data", "overall_status", overallStatus, "success_rate", successRate)
+		if _, err := fmt.Fprintf(file, "- **Overall Status**: %s\n", overallStatus); err != nil {
+			return fmt.Errorf("failed to write overall status: %w", err)
+		}
+		if _, err := fmt.Fprintf(file, "- **Success Rate**: %s\n", successRate); err != nil {
+			return fmt.Errorf("failed to write success rate: %w", err)
+		}
+		if _, err := file.WriteString("- **Duration**: N/A\n"); err != nil {
+			return fmt.Errorf("failed to write duration: %w", err)
+		}
+
+		// Write detailed steps if they exist
+		if len(report.Steps) > 0 {
+			if err := writeStepsToFile(file, report.Steps); err != nil {
+				return err
+			}
+			slog.Debug("Successfully wrote calculated summary and steps to file", "steps_written", len(report.Steps))
+		} else {
+			slog.Warn("No summary data available and no steps found in report")
+			if _, err := file.WriteString("⚠️ No summary data available\n"); err != nil {
+				return fmt.Errorf("failed to write no summary message: %w", err)
+			}
 		}
 	}
 
