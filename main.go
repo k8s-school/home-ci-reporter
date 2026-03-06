@@ -372,31 +372,10 @@ func outputReportToConsole(report TestReport) error {
 		fmt.Printf("- **Success Rate**: %s\n", s.SuccessRate)
 		fmt.Printf("- **Duration**: %ds\n", s.Duration)
 	} else {
-		// Calculate overall status from steps when summary is missing
-		passedSteps := 0
-		failedSteps := 0
-		totalSteps := len(report.Steps)
+		// When summary is missing, tests didn't complete successfully
 
-		for _, step := range report.Steps {
-			switch step.Status {
-			case "passed":
-				passedSteps++
-			case "failed":
-				failedSteps++
-			}
-		}
-
-		overallStatus := "passed"
-		if failedSteps > 0 {
-			overallStatus = "failed"
-		}
-
-		var successRate string
-		if totalSteps > 0 {
-			successRate = fmt.Sprintf("%.0f%%", float64(passedSteps)/float64(totalSteps)*100)
-		} else {
-			successRate = "0%"
-		}
+		overallStatus := "failed"  // No summary means tests didn't complete successfully
+		successRate := "unknown"   // Can't calculate success rate without knowing total expected steps
 
 		fmt.Printf("- **Overall Status**: %s\n", overallStatus)
 		fmt.Printf("- **Success Rate**: %s\n", successRate)
@@ -473,31 +452,10 @@ func appendReportToGitHubSummary(report TestReport, summaryPath string) error {
 
 		slog.Debug("Successfully wrote summary to file", "steps_written", len(report.Steps))
 	} else {
-		// Calculate overall status from steps when summary is missing
-		passedSteps := 0
-		failedSteps := 0
-		totalSteps := len(report.Steps)
+		// When summary is missing, tests didn't complete successfully
 
-		for _, step := range report.Steps {
-			switch step.Status {
-			case "passed":
-				passedSteps++
-			case "failed":
-				failedSteps++
-			}
-		}
-
-		overallStatus := "passed"
-		if failedSteps > 0 {
-			overallStatus = "failed"
-		}
-
-		var successRate string
-		if totalSteps > 0 {
-			successRate = fmt.Sprintf("%.0f%%", float64(passedSteps)/float64(totalSteps)*100)
-		} else {
-			successRate = "0%"
-		}
+		overallStatus := "failed"  // No summary means tests didn't complete successfully
+		successRate := "unknown"   // Can't calculate success rate without knowing total expected steps
 
 		slog.Debug("Writing calculated summary data", "overall_status", overallStatus, "success_rate", successRate)
 		if _, err := fmt.Fprintf(file, "- **Overall Status**: %s\n", overallStatus); err != nil {
